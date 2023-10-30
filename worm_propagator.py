@@ -12,7 +12,7 @@ class single_propagator():
         self.trajectory_z[starting_time]=starting_z
 
 class worm_propagator():
-    def __init__(self, N, n_time_slice):
+    def __init__(self, N, n_time_slice,chemical_potential,epsilon):
         self.dist = []
         self.nbosons = 0
         self.N = N
@@ -22,8 +22,8 @@ class worm_propagator():
         self.starting_point_z = None
         self.starting_time = None
         self.direction = None 
-        self.epsilon = None
-        self.chemical_potential = None 
+        self.epsilon = epsilon
+        self.chemical_potential = chemical_potential
         # direction: -1 for backward propagator;
         # 1 for forward propagator.
         
@@ -43,15 +43,27 @@ class worm_propagator():
                     self.dist[npropagator], self.dist[-1] = self.dist[-1], self.dist[npropagator]
         return 0
     
+    def prop_all(self,propagator):
+        for i in range(self.N):
+            if propagator.trajectory_x[i] != None:
+                return False
+        return True
+    
+    def prop_any(self,propagator):
+        for i in range(self.N):
+            if propagator.trajectory_x[i] == None:
+                return True 
+        return False
+     
     def renormalize(self):
         first_propagator = None
         second_propagator = None
         for propagator in self.dist[:-1]:
-            if all(propagator.trajectory_x == None):
+            if self.prop_all(propagator.trajectory_x):
                 del propagator
-            if any(propagator.trajectory_x == None) and (first_propagator == None):
+            if self.prop_any(propagator.trajectory_x) and (first_propagator == None):
                 first_propagator = propagator
-            if any(propagator.trajectory_x == None) and (first_propagator != None):
+            if self.prop_any(propagator.trajectory_x) and (first_propagator != None):
                 second_propagator = propagator
         if (first_propagator != None) and (second_propagator != None):
             for time in range(self.N):
@@ -80,22 +92,23 @@ class worm_propagator():
         self.starting_point_y = position // self.N
         self.starting_point_x = position % self.N
         if self.dist != []:
-            if self.compare(self.starting_time, self.starting_point_x, self.starting_point_y, self.starting_point_z):
+            temp2 = self.judge(self.starting_time, self.starting_point_x, self.starting_point_y, self.starting_point_z)
+            if temp2 == None:
                 self.dist.append(single_propagator(self.n_time_slice,
                                                self.starting_point_x,self.starting_point_y,self.starting_point_z,self.starting_time))
-                self.nbosons +=1
                 if random.random() <= min(1,math.exp(self.epsilon*self.chemical_potential)):
                     self.direction = +1
             else:
-                self.nbosons -= 1
-                pass #Execute the steps for overlapping. I would rather consider it later. #                 
-                                    
+                self.direction = -1
+                temp2, self.dist[-1] = self.dist[-1], temp2
+                #Execute the steps for overlapping. I would rather consider it later. #                                     
         else:
-            self.dist.append(single_propagator(self.n_time_slice,
+            self.dist.append(single_propagator(self.n_time_slice,self.starting_time,
                                                self.starting_point_x,self.starting_point_z,self.starting_time))
             if random.random() <= min(1,math.exp(self.epsilon*self.chemical_potential)):
                 self.direction = +1
-            self.nbosons += 1
+            else:
+                self.direction = -1
         
     def propagator(self, current_time, current_x,current_y,current_z): 
         # To make sure the path is feasible after MC update.
@@ -105,7 +118,17 @@ class worm_propagator():
             randomnum = random.random()
             if (current_time == self.starting_time) and (current_x == self.starting_point_x) and \
                 (current_y == self.starting_point_y) and (current_z == self.starting_point_z):
-                    return 0
+                return 0
+            temp1 = self.judge(self, current_time, current_x, current_y, current_z)
+            if (temp1 != None):
+                self.direction = -1
+                temp1.trajectory_x[current_time] = None
+                temp1.trajectory_y[current_time] = None
+                temp1.trajectory_z[current_time] = None
+                temp1, self.dist[-1] = self.dist[-1], temp1
+                self.propagator(self, current_time, self.dist[-1].trajectory_x[current_time],
+                                self.dist[-1].trajectory_y[current_time],self.dist[-1].trajectory_z[current_time])
+                
             if (current_time == self.N-1):
                 self.dist.append(single_propagator(self.n_time_slice,
                                 current_x,current_y,current_z, 0)) # bond update
@@ -178,3 +201,11 @@ class worm_propagator():
     
     def energy_sampler(self):
         return 0 # needs work
+
+if __name__ == "__main__":
+    
+    worm = worm_propagator(2,5000,0,0.002)
+    worm.initialization()
+    for i in range(15):
+        worm.propagator(worm.starting_time, worm.starting_point_x,worm.starting_point_y,worm.starting_point_z)
+        print(worm.nbosons_sampler())
