@@ -58,13 +58,13 @@ class worm_propagator():
     def renormalize(self):
         first_propagator = None
         second_propagator = None
-        for propagator in self.dist[:-1]:
-            if self.prop_all(propagator.trajectory_x):
-                del propagator
-            if self.prop_any(propagator.trajectory_x) and (first_propagator == None):
-                first_propagator = propagator
-            if self.prop_any(propagator.trajectory_x) and (first_propagator != None):
-                second_propagator = propagator
+        for propagator in range(len(self.dist)):
+            if self.prop_all(self.dist[propagator]):
+                del self.dist[propagator]
+            elif self.prop_any(self.dist[propagator]) and (first_propagator == None):
+                first_propagator = self.dist[propagator]
+            elif self.prop_any(self.dist[propagator]) and (first_propagator != None):
+                second_propagator = self.dist[propagator]
         if (first_propagator != None) and (second_propagator != None):
             for time in range(self.N):
                 if first_propagator.trajectory_x[time] == None :
@@ -196,6 +196,7 @@ class worm_propagator():
                                 self.dist[-1].trajectory_y[self.N-1], self.dist[-1].trajectory_z[self.N-1])
         
     def nbosons_sampler(self):
+        self.renormalize()
         self.nbosons = len(self.dist)
         return self.nbosons
     
@@ -204,8 +205,9 @@ class worm_propagator():
 
 if __name__ == "__main__":
     
-    worm = worm_propagator(2,5000,0,0.002)
-    worm.initialization()
+    worm = worm_propagator(2,500,0,0.002)
     for i in range(15):
+        worm.initialization()
         worm.propagator(worm.starting_time, worm.starting_point_x,worm.starting_point_y,worm.starting_point_z)
         print(worm.nbosons_sampler())
+    print(worm.dist[0].trajectory_x)
