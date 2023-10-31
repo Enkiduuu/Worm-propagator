@@ -12,10 +12,11 @@ class single_propagator():
         self.trajectory_z[starting_time]=starting_z
 
 class worm_propagator():
-    def __init__(self, N, n_time_slice,chemical_potential,epsilon):
+    def __init__(self, N, n_time_slice,chemical_potential,epsilon, t):
         self.dist = []
         self.nbosons = 0
         self.N = N
+        self.t = t
         self.n_time_slice = n_time_slice
         self.starting_point_x = None
         self.starting_point_y = None
@@ -37,41 +38,38 @@ class worm_propagator():
         return None
     
     def find_and_swap(self, current_x, current_y, current_z):
-        for npropagator in len(self.dist[:-2]):
-            if (self.dist[npropagator].trajectory_x[0] == current_x) and (self.dist[npropagator].trajectory_y[0] == current_y) and \
-                (self.dist[npropagator].trajectory_z[0] == current_z):
+        for npropagator in len(self.dist[:-1]):
+            if (self.dist[npropagator].trajectory_x[self.n_time_slice-1] == current_x) and (self.dist[npropagator].trajectory_y[self.n_time_slice-1] == current_y) and \
+                (self.dist[npropagator].trajectory_z[self.n_time_slice-1] == current_z):
                     self.dist[npropagator], self.dist[-1] = self.dist[-1], self.dist[npropagator]
         return 0
     
     def prop_all(self,propagator):
-        for i in range(self.N):
+        for i in range(self.n_time_slice):
             if propagator.trajectory_x[i] != None:
                 return False
         return True
     
     def prop_any(self,propagator):
-        for i in range(self.N):
+        for i in range(self.n_time_slice):
             if propagator.trajectory_x[i] == None:
                 return True 
         return False
      
     def renormalize(self):
         first_propagator = None
-        second_propagator = None
-        for propagator in range(len(self.dist)):
+        for propagator in range(len(self.dist)-1):
             if self.prop_all(self.dist[propagator]):
                 del self.dist[propagator]
-            elif self.prop_any(self.dist[propagator]) and (first_propagator == None):
+            elif self.prop_any(self.dist[propagator]) :
                 first_propagator = self.dist[propagator]
-            elif self.prop_any(self.dist[propagator]) and (first_propagator != None):
-                second_propagator = self.dist[propagator]
-        if (first_propagator != None) and (second_propagator != None):
-            for time in range(self.N):
+        if first_propagator != None :
+            for time in range(self.n_time_slice):
                 if first_propagator.trajectory_x[time] == None :
-                    first_propagator.trajectory_x[time] = second_propagator.trajectory_x[time]
-                    first_propagator.trajectory_y[time] = second_propagator.trajectory_y[time]
-                    first_propagator.trajectory_z[time] = second_propagator.trajectory_z[time]
-            del second_propagator
+                    first_propagator.trajectory_x[time] = self.dist[-1].trajectory_x[time]
+                    first_propagator.trajectory_y[time] = self.dist[-1].trajectory_y[time]
+                    first_propagator.trajectory_z[time] = self.dist[-1].trajectory_z[time]
+            del self.dist[-1]
         return 0
     
     def compare(self,time,position_x,position_y,position_z):
@@ -103,42 +101,48 @@ class worm_propagator():
                 temp2, self.dist[-1] = self.dist[-1], temp2
                 #Execute the steps for overlapping. I would rather consider it later. #                                     
         else:
-            self.dist.append(single_propagator(self.n_time_slice,self.starting_time,
-                                               self.starting_point_x,self.starting_point_z,self.starting_time))
+            self.dist.append(single_propagator(self.n_time_slice,self.starting_point_x,
+                                               self.starting_point_y,self.starting_point_z,self.starting_time))
             if random.random() <= min(1,math.exp(self.epsilon*self.chemical_potential)):
                 self.direction = +1
             else:
                 self.direction = -1
         
-    def propagator(self, current_time, current_x,current_y,current_z): 
+    def propagator(self, current_time, current_x,current_y,current_z,init=None): 
         # To make sure the path is feasible after MC update.
-        # In other words, to make sure we are actually calculateing the 
+        # In other words, to make sure we are actually calculating the 
         # diagonal elements of the propagator.
         if (self.direction == 1) :
-            randomnum = random.random()
             if (current_time == self.starting_time) and (current_x == self.starting_point_x) and \
-                (current_y == self.starting_point_y) and (current_z == self.starting_point_z):
+                (current_y == self.starting_point_y) and (current_z == self.starting_point_z) and (init == None):
                 return 0
-            temp1 = self.judge(self, current_time, current_x, current_y, current_z)
+            temp1 = self.judge(current_time, current_x, current_y, current_z)
             if (temp1 != None):
                 self.direction = -1
-                temp1.trajectory_x[current_time] = None
-                temp1.trajectory_y[current_time] = None
-                temp1.trajectory_z[current_time] = None
+                self.dist[-1].trajectory_x[current_time:-1] = temp1.trajectory_x[current_time:-1]
+                self.dist[-1].trajectory_y[current_time:-1] = temp1.trajectory_y[current_time:-1]
+                self.dist[-1].trajectory_z[current_time:-1] = temp1.trajectory_z[current_time:-1]
+                temp1.trajectory_x[current_time:-1] = None
+                temp1.trajectory_y[current_time:-1] = None
+                temp1.trajectory_z[current_time:-1] = None
                 temp1, self.dist[-1] = self.dist[-1], temp1
-                self.propagator(self, current_time, self.dist[-1].trajectory_x[current_time],
+                self.propagator(current_time, self.dist[-1].trajectory_x[current_time],
                                 self.dist[-1].trajectory_y[current_time],self.dist[-1].trajectory_z[current_time])
                 
-            if (current_time == self.N-1):
+            elif (current_time == self.n_time_slice-1):
                 self.dist.append(single_propagator(self.n_time_slice,
                                 current_x,current_y,current_z, 0)) # bond update
+                current_time = 0
                 if (random.random() <= min(1,math.exp(self.epsilon*self.chemical_potential))):
                     self.direction = +1
                 else:
                     self.direction = -1
                     # site update
+                    self.propagator(current_time,self.dist[-1].trajectory_x[current_time],
+                                self.dist[-1].trajectory_y[current_time],self.dist[-1].trajectory_z[current_time])
             else:
-                current_time = (current_time + 1) % self.N
+                current_time += 1
+                randomnum = random.random()
                 if randomnum <= 1-6*self.t*self.epsilon :
                     self.dist[-1].trajectory_x[current_time] = current_x
                     self.dist[-1].trajectory_y[current_time] = current_y
@@ -167,13 +171,13 @@ class worm_propagator():
                     self.dist[-1].trajectory_x[current_time] = current_x
                     self.dist[-1].trajectory_y[current_time] = current_y
                     self.dist[-1].trajectory_z[current_time] = (current_z - 1 + self.N) % self.N
-                self.propagator(self, current_time, self.dist[-1].trajectory_x[current_time],
-                                self.dist[-1].trajectory_y[current_time],self.dist[-1].trajectory_z[current_time]) # bond update
                 if (random.random() <= min(1,math.exp(self.epsilon*self.chemical_potential))):
                     self.direction = +1
                 else:
                     self.direction = -1
                     # site update
+                self.propagator(current_time, self.dist[-1].trajectory_x[current_time],
+                                self.dist[-1].trajectory_y[current_time],self.dist[-1].trajectory_z[current_time]) # bond update
                     
         if (self.direction == -1):
             self.dist[-1].trajectory_x[current_time] = None
@@ -188,12 +192,12 @@ class worm_propagator():
                 self.direction = 1
             if current_time > 0 :
                 current_time = current_time - 1
-                self.propagator(self, current_time, self.dist[-1].trajectory_x[current_time],
+                self.propagator(current_time, self.dist[-1].trajectory_x[current_time],
                             self.dist[-1].trajectory_y[current_time],self.dist[-1].trajectory_z[current_time])
             elif current_time == 0:
-                self.find_and_swap(self, current_x, current_y, current_z)
-                self.propagator(self, current_time, self.dist[-1].trajectory_x[self.N-1],
-                                self.dist[-1].trajectory_y[self.N-1], self.dist[-1].trajectory_z[self.N-1])
+                self.find_and_swap(current_x, current_y, current_z)
+                self.propagator(self.N-1, self.dist[-1].trajectory_x[self.n_time_slice-1],
+                                self.dist[-1].trajectory_y[self.n_time_slice-1], self.dist[-1].trajectory_z[self.n_time_slice-1])
         
     def nbosons_sampler(self):
         self.renormalize()
@@ -205,9 +209,12 @@ class worm_propagator():
 
 if __name__ == "__main__":
     
-    worm = worm_propagator(2,500,0,0.002)
-    for i in range(15):
+    worm = worm_propagator(2,50,0,0.002,1)
+    for i in range(100):
         worm.initialization()
-        worm.propagator(worm.starting_time, worm.starting_point_x,worm.starting_point_y,worm.starting_point_z)
+        print(worm.nbosons_sampler())
+        worm.propagator(worm.starting_time, worm.starting_point_x,worm.starting_point_y,worm.starting_point_z,init=1)
         print(worm.nbosons_sampler())
     print(worm.dist[0].trajectory_x)
+    print(worm.dist[0].trajectory_y)
+    print(worm.dist[0].trajectory_z)
